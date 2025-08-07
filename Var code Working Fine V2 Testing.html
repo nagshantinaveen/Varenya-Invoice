@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Varenya Galleria - Tax Invoice Generator</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f4; }
+        .container { max-width: 900px; margin: auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0, 0, 0, 0.1); }
+        h2 { text-align: center; color: #333; }
+        .form-section { display: flex; flex-wrap: wrap; justify-content: space-between; margin-bottom: 20px; }
+        .form-group { margin-bottom: 15px; width: 48%; }
+        .form-group.full-width { width: 100%; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="date"], input[type="number"], select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        table th, table td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        table th { background-color: #f2f2f2; font-weight: bold; }
+        table tr:nth-child(even) { background-color: #f9f9f9; }
+        table td:nth-child(4), table td:nth-child(5), table td:nth-child(6), table td:nth-child(7) { text-align: right; }
+        table .line-total, #total-summary td:last-child { font-weight: bold; }
+        img.product-img { max-width: 60px; height: auto; display: block; margin: auto; }
+        .btn { padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 4px; font-size: 16px; margin-top: 20px; }
+        .btn:hover { background-color: #45a049; }
+        #add-row-btn, .delete-btn { background-color: #008CBA; margin-top: 0; }
+        .delete-btn { background-color: #f44336; padding: 5px 10px; font-size: 14px; }
+        .delete-btn:hover { background-color: #da190b; }
+        #total-summary { width: 40%; margin-left: auto; margin-top: 20px; }
+        #total-summary td { border: none; padding: 8px 0; }
+        #total-summary tr:last-child td { border-top: 2px solid #333; font-size: 1.2em; }
+        @media (max-width: 600px) {
+            .form-group { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Varenya Galleria - Tax Invoice Generator</h2>
+    
+    <div class="form-section">
+        <div class="form-group full-width">
+            <label>Company Logo:</label>
+            <input type="file" id="company-logo" accept="image/*" onchange="previewCompanyLogo(this)">
+        </div>
+    </div>
+    
+    <div class="form-section">
+        <div class="form-group">
+            <label>Invoice No:</label>
+            <input type="text" id="invoice-no" value="INV001">
+        </div>
+        <div class="form-group">
+            <label>Date:</label>
+            <input type="date" id="invoice-date">
+        </div>
+        <div class="form-group">
+            <label>Customer Name:</label>
+            <input type="text" id="customer-name" placeholder="John Doe">
+        </div>
+        <div class="form-group">
+            <label>Customer Address:</label>
+            <input type="text" id="customer-address" placeholder="123 Street, City">
+        </div>
+    </div>
+
+    <table id="product-table">
+        <thead>
+            <tr>
+                <th>Image</th>
+                <th>Item</th>
+                <th>SKU Code</th>
+                <th>Qty</th>
+                <th>Rate (₹)</th>
+                <th>GST %</th>
+                <th>Total (₹)</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="product-body">
+            <tr>
+                <td data-image="">
+                    <input type="file" accept="image/*" onchange="previewImage(this)">
+                </td>
+                <td><input type="text" placeholder="Item"></td>
+                <td><input type="text" placeholder="SKU"></td>
+                <td><input type="number" value="1" min="1" onchange="updateTotals()"></td>
+                <td><input type="number" value="0" min="0" onchange="updateTotals()"></td>
+                <td><input type="number" value="18" min="0" onchange="updateTotals()"></td>
+                <td class="line-total">₹0.00</td>
+                <td><button class="delete-btn" onclick="deleteRow(this)">X</button></td>
+            </tr>
+        </tbody>
+    </table>
+    <button id="add-row-btn" onclick="addRow()">Add Product</button>
+
+    <table id="total-summary">
+        <tbody>
+            <tr>
+                <td>Subtotal:</td>
+                <td id="subtotal-display">₹0.00</td>
+            </tr>
+            <tr>
+                <td>GST Amount:</td>
+                <td id="gst-display">₹0.00</td>
+            </tr>
+            <tr>
+                <td>Grand Total:</td>
+                <td id="grand-total">₹0.00</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <button class="btn" id="generate-btn" onclick="generateInvoice()">Generate & Save Invoice</button>
+</div>
+
+<script>
+// ====================================================================
+// ============= Configuration for Local vs. Hosted ===================
+// ====================================================================
+
+const IS_LOCAL_TESTING = false; // Set this to false for the new solution
+const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwgq6thpH6xmfCG0rq3XbC_3hg7pFs43W45G_4BmfRHRdwggyJV3U04UDViCZ_ti9fl1Q/exec'; 
+
+// ====================================================================
+// ====================================================================
+// ====================================================================
+
+document.addEventListener("DOMContentLoaded", function() {
+    document.getElementById('invoice-date').valueAsDate = new Date();
+    updateTotals();
+});
+
+let rowId = 0;
+let companyLogoBase64 = null;
+
+function previewCompanyLogo(input) {
+    const file = input.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            companyLogoBase64 = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function addRow() {
+    const table = document.getElementById("product-body");
+    const row = table.insertRow();
+    row.id = `row-${rowId}`;
+
+    row.innerHTML = `
+        <td data-image="">
+            <input type="file" accept="image/*" onchange="previewImage(this)">
+        </td>
+        <td><input type="text" placeholder="Item"></td>
+        <td><input type="text" placeholder="SKU"></td>
+        <td><input type="number" value="1" min="1" onchange="updateTotals()"></td>
+        <td><input type="number" value="0" min="0" onchange="updateTotals()"></td>
+        <td><input type="number" value="18" min="0" onchange="updateTotals()"></td>
+        <td class="line-total">₹0.00</td>
+        <td><button class="delete-btn" onclick="deleteRow(this)">X</button></td>
+    `;
+    rowId++;
+    updateTotals();
+}
+
+function deleteRow(btn) {
+    btn.closest('tr').remove();
+    updateTotals();
+}
+
+function previewImage(input) {
+    const file = input.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            const td = input.parentElement;
+            td.innerHTML = `<img src='${e.target.result}' class='product-img'>`;
+            td.dataset.image = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function updateTotals() {
+    let subtotal = 0;
+    let gstAmount = 0;
+    const rows = document.querySelectorAll("#product-body tr");
+    
+    rows.forEach(row => {
+        const qtyInput = row.cells[3].querySelector('input');
+        const rateInput = row.cells[4].querySelector('input');
+        const gstInput = row.cells[5].querySelector('input');
+
+        const qty = parseFloat(qtyInput ? qtyInput.value : 0) || 0;
+        const rate = parseFloat(rateInput ? rateInput.value : 0) || 0;
+        const gst = parseFloat(gstInput ? gstInput.value : 0) || 0;
+        
+        const lineSubtotal = qty * rate;
+        const lineGstAmount = (lineSubtotal * gst) / 100;
+        const lineTotal = lineSubtotal + lineGstAmount;
+        
+        row.querySelector(".line-total").innerText = `₹${lineTotal.toFixed(2)}`;
+        
+        subtotal += lineSubtotal;
+        gstAmount += lineGstAmount;
+    });
+
+    const grandTotal = subtotal + gstAmount;
+    document.getElementById("subtotal-display").innerText = `₹${subtotal.toFixed(2)}`;
+    document.getElementById("gst-display").innerText = `₹${gstAmount.toFixed(2)}`;
+    document.getElementById("grand-total").innerText = `₹${grandTotal.toFixed(2)}`;
+}
+
+async function generateInvoice() {
+    const invoiceData = collectInvoiceData();
+
+    if (!invoiceData.customerName || !invoiceData.invoiceDate) {
+        alert("Please fill in customer name and invoice date.");
+        return;
+    }
+
+    const generateBtn = document.getElementById('generate-btn');
+    generateBtn.disabled = true;
+    generateBtn.innerText = 'Generating... Please Wait';
+
+    try {
+        const response = await fetch(APP_SCRIPT_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(invoiceData),
+            mode: 'cors'
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            alert("Invoice generated and saved to Google Drive and Google Sheet successfully!");
+        } else {
+            alert("Failed to generate invoice. Please check your Apps Script and permissions. Error: " + (result.error || "Unknown error."));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert("An error occurred while generating the invoice. Please check the console for details.");
+    } finally {
+        generateBtn.disabled = false;
+        generateBtn.innerText = 'Generate & Save Invoice';
+    }
+}
+
+function collectInvoiceData() {
+    const data = {
+        invoiceNo: document.getElementById("invoice-no").value,
+        invoiceDate: document.getElementById("invoice-date").value,
+        customerName: document.getElementById("customer-name").value,
+        customerAddress: document.getElementById("customer-address").value,
+        subtotal: 0,
+        gstAmount: 0,
+        grandTotal: 0,
+        companyLogo: companyLogoBase64,
+        items: []
+    };
+
+    const rows = document.querySelectorAll("#product-body tr");
+    let subtotal = 0;
+    let gstAmount = 0;
+
+    rows.forEach(row => {
+        const cells = row.cells;
+        const qty = parseFloat(cells[3].querySelector('input').value) || 0;
+        const rate = parseFloat(cells[4].querySelector('input').value) || 0;
+        const gst = parseFloat(cells[5].querySelector('input').value) || 0;
+        const lineSubtotal = qty * rate;
+        const lineGst = (lineSubtotal * gst) / 100;
+        const lineTotal = lineSubtotal + lineGst;
+        
+        subtotal += lineSubtotal;
+        gstAmount += lineGst;
+        
+        data.items.push({
+            item: cells[1].querySelector('input').value || "",
+            sku: cells[2].querySelector('input').value || "",
+            qty: qty,
+            rate: rate,
+            gst: gst,
+            lineTotal: lineTotal,
+            imgSrc: cells[0].dataset.image || ""
+        });
+    });
+
+    data.subtotal = subtotal;
+    data.gstAmount = gstAmount;
+    data.grandTotal = subtotal + gstAmount;
+
+    return data;
+}
+</script>
+</body>
+</html>
